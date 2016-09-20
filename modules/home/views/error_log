@@ -1,0 +1,1 @@
+[08-Mar-2016 17:23:23 Etc/GMT] PHP Fatal error:  Using $this when not in object context in /home/gobart4z/public_html/modules/home/views/google_authentication.php on line 1

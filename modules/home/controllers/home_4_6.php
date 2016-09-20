@@ -1,0 +1,637 @@
+<?php
+class Home extends Public_Controller
+{
+
+  public function __construct()
+  {
+	parent::__construct();        
+	$this->load->model(array('home_model','timelinepost/timeline_model','admin_products/products_model','messages/messages_model','enquiry/enquiry_model'));
+	$this->load->helper('scroll_pagination/scroll_pagination');	
+	require_once APPPATH . 'libraries/google-api-php-client-master/src/Google/autoload.php';
+	require_once APPPATH . 'libraries/google-api-php-client-master/src/Google/Service/Analytics.php';
+	include_once APPPATH . "libraries/google-api-php-client-master/src/Google/Client.php";
+	include_once APPPATH . "libraries/google-api-php-client-master/src/Google/Service/Oauth2.php";  
+  }
+
+	public function index() 
+	{
+		$condition 					= array();
+		$where 						= "";
+		$condition['status'] 		= '1';
+		$pagesize              		=  (int) $this->input->get_post('pagesize');
+		$config['limit']			=  ( $pagesize > 0 ) ? $pagesize : $this->config->item('per_page');
+		$page_segment          		= 3;
+		$offset                		=  $this->uri->segment($page_segment);	
+		$base_url              		=  base_url().'home/index';       
+		$res_array 					= $this->home_model->get_traveler($config['limit'], $offset, $condition);			 
+		$config['total_rows'] 		= get_found_rows();
+		$data['res'] 				= $res_array;
+		$data['scroll_pagination']    = scroll_pagination($base_url,$config['total_rows'],$config['limit'],$page_segment);		
+		$this->load->view('home',$data);
+	}
+	function get_trav_plan()
+	{	
+		$condition = array();
+		$where 					= "";
+		$condition['status'] 	= '1';
+		$pagesize              	=  (int) $this->input->get_post('pagesize');
+		$config['limit']		=  ( $pagesize > 0 ) ? $pagesize : $this->config->item('per_page');
+		$page_segment          	= 4;
+		$offset                	=  $this->uri->segment($page_segment);		
+		$base_url              	=  base_url();
+		$res_array 				= $this->home_model->get_traveler($config['limit'], $offset, $condition);			 
+		$config['total_rows'] 	= get_found_rows();
+		$data['res'] 			= $res_array;			
+		$data['main_content'] 	= 'home';    
+		$this->load->view('home', $data);  
+	}	
+	public function get_traveler()
+	{
+		$posted_data 			= array_filter($this->input->get());
+		$condition 				= array();
+		$where 					= "";
+		$condition['status'] 	= '1';
+		$pagesize              	=  (int) $this->input->get_post('pagesize');
+		$config['limit']		=  ( $pagesize > 0 ) ? $pagesize : $this->config->item('per_page');
+		$page_segment          	= 3;
+		$offset                	=  $this->uri->segment($page_segment);	  
+		$base_url              	=  base_url().'home/index';         
+		$travel_from 			= $this->input->get_post('travel_from', TRUE);
+		$travel_to 				= $this->input->get_post('travel_to', TRUE);
+		$from_date 				= $this->input->get_post('from_date', TRUE);
+		$to_date 				= $this->input->get_post('to_date', TRUE);		 
+		 if ($from_date != '' and $to_date != '') {
+			$where.='wlp.from_date >= "'.$from_date.'" AND wlp.to_date<= "'.$to_date.'"';
+			} elseif ($from_date != '') {
+			$where.="(wlp.from_date='$from_date') ";
+		} elseif ($to_date != '') {
+			$where.="(wlp.to_date='$to_date') ";
+		}
+			$condition['where']=$where;
+		if ($travel_from != '') {
+			$condition['travel_from'] = $travel_from;
+		}
+		if ($travel_to != '') {
+			$condition['travel_to'] = $travel_to;
+		}
+		$res_array = $this->home_model->get_traveler($config['limit'], $offset, $condition);
+		$config['total_rows'] = get_found_rows();
+		$data['res'] = $res_array;
+		$data['scroll_pagination']    = scroll_pagination($base_url,$config['total_rows'],$config['limit'],$page_segment);
+		$data['page_links']     	  =  pagination_refresh($base_url,$config['total_rows'],$config['limit'],$offset);
+		$data['heading_title'] 		  = "Search Result";
+		$this->load->view('home', $data);
+	}
+	
+		public function insertmessage()
+		{
+			
+			$sender_id		= $this->input->get_post('sender_id');
+			$reciever_id	= $this->input->get_post('reciever_id');
+			$ThreadCount 	= $this->messages_model->ThreadCount($sender_id,$reciever_id);
+			$countThread	= count($ThreadCount);
+			//print_r($countThread); die;
+			if($countThread == 0)
+			{
+				$posted_data = array(
+                'sender_id'  	=> $sender_id,
+                'reciever_id' 	=> $reciever_id,                
+				'thread_date'	=> date('Y-m-d H:i:s')	
+				);
+				$this->db->insert('tbl_thread',$posted_data,FALSE);
+			}
+			else
+			{
+				$thread_id		= $ThreadCount[0]['thread_id'];
+				$posted_data	= array(                
+				'thread_date'	=> date('Y-m-d H:i:s')	
+				);
+				 $where = "thread_id = '".$thread_id."'"; 						
+				$this->messages_model->safe_update('tbl_thread',$posted_data,$where,FALSE);
+			}
+			
+			if( !empty($_FILES) && $_FILES['image']['name']!='' )
+				{
+				$this->load->library('upload');					
+				$uploaded_data =  $this->upload->my_upload('image','message_image');
+				if( is_array($uploaded_data)  && !empty($uploaded_data) )
+				{ 								
+					$uploaded_file = $uploaded_data['upload_data']['file_name'];
+				}	
+				$sender_id		= $this->input->get_post('sender_id');
+				$reciever_id	= $this->input->get_post('reciever_id');				
+				$message     	=$this->input->get_post('message');
+				 $posted_data = array(
+                'sender_id'  	=> $sender_id,
+                'reciever_id' 	=> $reciever_id,	
+                'message'		=> $message,
+				'message_image'	=> $uploaded_file,
+				'msg_add_date'	=> date('Y-m-d H:i:s')
+				);
+				}
+				else
+				{
+				$sender_id		= $this->input->get_post('sender_id');
+				$reciever_id	= $this->input->get_post('reciever_id');				
+				$message     	=$this->input->get_post('message');
+				 $posted_data = array(
+                'sender_id'  	=> $sender_id,
+                'reciever_id' 	=> $reciever_id,	
+                'message'		=> $message,				
+				'msg_add_date'	=> date('Y-m-d H:i:s')	
+				);
+				}
+				//print_r($posted_data); die;
+				$this->db->insert('tbl_message',$posted_data,FALSE); ?>
+                                <img src='<?php echo theme_url(); ?>img/loading.gif'/>					
+				 <?php echo "Message Sending" ;
+				}
+
+			public function login()
+			{
+			if(@$this->session->userdata('is_logged_in')):
+			
+			redirect(site_url('home'));
+			else :
+			$this->load->library('facebook');
+			$this->data['login_url'] =
+			$this->facebook->getLoginUrl(array('redirect_uri' => site_url('home/flogin'),
+			'scope' => array("email")));
+			$this->load->view('login',$this->data);
+			endif;
+		}
+	/* Function For Facebook Login */
+	public function flogin(){
+		$user = "";
+		$this->load->library('facebook');
+		$userId = $this->facebook->getUser();        
+		if ($userId) {
+			try {
+				$user = $this->facebook->api('/me');
+				//print_r($user); die;
+			} catch (FacebookApiException $e) {
+				$user = "";
+			}
+		}else {
+			$this->facebook->destroySession();
+		}
+		if($user!="") :
+		   $this->load->model('user/users_model','users');        
+		   if(!$this -> users ->validate_email($user['email'])) :
+		   $male='';
+		   if($user['gender']=='male')
+		   {
+			   $male='M';
+		   }
+		  else
+		   {
+			   $male='F';
+		   }
+				$user_details = array(
+				'first_name'  => $user['first_name'],
+				'last_name'  => $user['last_name'],
+				'email' => $user['email'], 
+				'gender' => $male, 
+				'password' => $user['email'],          
+				);
+
+				$user_id = $this->db->insert('tbl_users', $user_details);   
+			       $users = $this -> users -> getuserInfo($user['email']);
+				$data = array(
+				'email' => $user['email'],
+				'is_logged_in' =>TRUE
+			);
+			$this->session->set_userdata($data);               
+			else :         
+				 $data = array(
+				'email' => $user['email'],
+				'is_logged_in' =>TRUE
+			);
+			$this->session->set_userdata($data);  
+			endif;
+		else :
+			$data['login_url'] = $this->facebook->getLoginUrl(array(
+				'redirect_uri' => site_url('home'), 
+				'scope' => array("email") // permissions here
+			));
+		endif;
+		redirect(site_url('home'));
+		
+	}
+	/* Function For Facebook Login End */ 
+
+		/* Home Product Details Start */
+
+		public function product_details()
+		{
+			if($this->session->userdata('is_logged_in'))
+			{			
+			
+			$condition                     	= array();
+			$pagesize                      	= (int) $this->input->get_post('pagesize');
+			$config['limit']         		= ( $pagesize > 0 ) ? $pagesize : $this->config->item('per_page');
+			$offset                      	=  ( $this->input->get_post('per_page') > 0 ) ? $this->input->get_post('per_page') : 0;
+			$config['total_rows']           = $this->home_model->record_count();			
+			$base_url                       = current_url_query_string(array('filter'=>'result'),array('per_page'));
+			$data['page_links']            	= pagination_refresh($base_url,$config['total_rows'],$config['limit'],$offset);
+			$res 							= $this->home_model->get_traveler($config['limit'], $offset, $condition);
+			$data['res']					= $res;
+			$res_array              		= $this->home_model->get_products($config['limit'],$offset,$condition);  
+			$data['res_array']             	= $res_array; 			
+			$this->load->view('home/view_home_products',$data);
+			} else {
+				redirect(site_url('user/login'));
+			}
+			}
+		/* Home Product Details End */ 
+
+               /* Home Product Search Start */
+
+		public function product_search()
+		{
+			if($this->session->userdata('is_logged_in'))
+			{			
+			$condition                     	= array();
+			$pagesize                      	= (int) $this->input->get_post('pagesize');
+			$config['limit']         		= ( $pagesize > 0 ) ? $pagesize : $this->config->item('per_page');
+			$offset                      	=  ( $this->input->get_post('per_page') > 0 ) ? $this->input->get_post('per_page') : 0;			
+			$base_url                       = current_url_query_string(array('filter'=>'result'),array('per_page'));			
+			$config['total_rows'] 			= get_found_rows();
+			$data['page_links']            	= pagination_refresh($base_url,$config['total_rows'],$config['limit'],$offset);			
+			$country                		= $this->input->get_post('country_name');
+			$city                			= $this->input->get_post('city_name');	
+			//print_r($city); die;			
+			if($country!='')
+			{
+			$condition['country_id']=$country;			
+			}
+			if($city!='')
+			{
+			$condition['city_id']=$city;			
+			}
+			$res_array              		 = $this->home_model->get_products($config['limit'],$offset,$condition);  
+			$data['res_array']             	 = $res_array;			
+			$res 							 = $this->home_model->get_traveler($config['limit'], $offset);
+			$data['res']					 = $res;	
+			$this->load->view('home/view_home_products',$data);
+			} else {
+				redirect(site_url('user/login'));
+			}
+			}
+		/* Home Product Search End */ 
+
+
+		/*more products form the buyers start here*/
+		public function more_products()
+		{
+			if($this->session->userdata('is_logged_in'))
+			{
+			$this->load->model('user/Users_model');
+			$config			 = array();
+			$pagesize        = (int) $this->input->get_post('pagesize');
+			$config['limit'] = ( $pagesize > 0 ) ? $pagesize : $this->config->item('per_page');
+			$offset          = ($this->input->get_post('per_page') > 0 ) ? $this->input->get_post('per_page') : 0;				
+			$base_url        =  current_url_query_string(array('filter'=>'result'),array('per_page'));			
+			//$user            = $this->input->get_post('user_id');
+			$uid = $this->uri->segment(3); 
+			
+			if($uid!='')
+			{
+			$condition['user_id']=	$uid;
+			}
+			
+			$res_array				   	   = $this->home_model->get_more_products($config['limit'],$offset,$condition);
+			$config['total_rows']		   = $this->home_model->record_count1($uid);
+			$user                          =$this->home_model->getUserInfo($uid);	
+			$data['page_links']            = pagination_refresh("$base_url",$config['total_rows'],$config['limit'],$offset);	
+			$data['res_array']             = $res_array;
+			$data['user_data']             = $user;
+			//print_r($user); die;
+			$this->load->view('home/view_more_products',$data);	
+			}
+			else
+			{
+			redirect(site_url('user/login'));	
+			}
+		}
+		/*more products form the buyers end here*/
+		
+		/*Enquiry for product*/
+		public function sendEnquiry()
+		{
+			$sender_id		= $this->input->get_post('senderId');
+			$reciever_id	= $this->input->get_post('recieverId');
+			$EnqCount 		= $this->enquiry_model->EnqCount($sender_id,$reciever_id);
+			$countThread	= count($EnqCount);
+			if($countThread == 0)
+			{
+				$posted_data = array(
+                'sender_id'  		=> $sender_id,
+                'reciever_id' 		=> $reciever_id,                
+				'enq_thread_date'	=> date('Y-m-d H:i:s')	
+				);
+				$this->db->insert('tbl_enquiry_thread',$posted_data,FALSE);
+				}
+				else
+				{
+				$thread_id			= $EnqCount[0]['enq_thread_id'];
+				$posted_data		= array(                
+				'enq_thread_date'	=> date('Y-m-d H:i:s')
+				);
+				$where = "enq_thread_id = '".$thread_id."'";				
+				$this->enquiry_model->safe_update('tbl_enquiry_thread',$posted_data,$where,FALSE);	
+				}
+				$senderId	= $this->input->get_post('senderId');
+				$recieverId	= $this->input->get_post('recieverId');
+				//print_r($recieverId);
+				$msg     =$this->input->get_post('enquiry');
+				$posted_data = array(
+                'sender_id'  	=> $senderId,
+                'reciever_id' 	=> $recieverId,	
+                'enquiry'		=> $msg,
+				'enquiry_date'	=> date('Y-m-d H:i:s')
+				);
+				//print_r($posted_data); die;
+				$this->db->insert('tbl_enquiry',$posted_data,FALSE);
+				echo "Enquiry Sent" ; 
+		}
+		/*private message send*/
+		public function PrivateMessage()
+		{
+			
+			$sender_id		= $this->input->get_post('sender_id');
+			$reciever_id	= $this->input->get_post('reciever_id');
+			$ThreadCount 	= $this->messages_model->ThreadCount($sender_id,$reciever_id);
+			$countThread	= count($ThreadCount);
+			//print_r($countThread); die;
+			if($countThread == 0)
+			{
+				$posted_data = array(
+                'sender_id'  	=> $sender_id,
+                'reciever_id' 	=> $reciever_id,                
+				'thread_date'	=> date('Y-m-d H:i:s')	
+				);
+				$this->db->insert('tbl_thread',$posted_data,FALSE);
+			}
+			else
+			{
+				$thread_id		= $ThreadCount[0]['thread_id'];
+				$posted_data	= array(                
+				'thread_date'	=> date('Y-m-d H:i:s')	
+				);
+				 $where = "thread_id = '".$thread_id."'"; 						
+				$this->messages_model->safe_update('tbl_thread',$posted_data,$where,FALSE);
+			}
+			
+			if( !empty($_FILES) && $_FILES['image']['name']!='' )
+				{
+					$this->load->library('upload');					
+					$uploaded_data =  $this->upload->my_upload('image','message_image');
+					if( is_array($uploaded_data)  && !empty($uploaded_data) )
+					{ 								
+						$uploaded_file = $uploaded_data['upload_data']['file_name'];
+					}	
+				$sender_id		= $this->input->get_post('sender_id');
+				$reciever_id	= $this->input->get_post('reciever_id');				
+				$message     	=$this->input->get_post('message');
+				 $posted_data = array(
+                'sender_id'  	=> $sender_id,
+                'reciever_id' 	=> $reciever_id,	
+                'message'		=> $message,
+				'message_image'	=> $uploaded_file,
+				'msg_add_date'	=> date('Y-m-d H:i:s')
+				);
+				}
+				else
+				{
+				$sender_id		= $this->input->get_post('sender_id');
+				$reciever_id	= $this->input->get_post('reciever_id');				
+				$message     	=$this->input->get_post('message');
+				 $posted_data = array(
+                'sender_id'  	=> $sender_id,
+                'reciever_id' 	=> $reciever_id,	
+                'message'		=> $message,				
+				'msg_add_date'	=> date('Y-m-d H:i:s')	
+				);
+				}
+				//print_r($posted_data); die;
+				$this->db->insert('tbl_message',$posted_data,FALSE);					
+					echo "Message Sent";						
+		}
+		/* Time Line Post function start Here */
+		public function timelinepost()
+		{
+			if($this->session->userdata('is_logged_in'))
+			{
+			$email=$this->session->userdata('email');
+			  $curudrID=$this->home_model->getUserID($email);		
+			  if(!empty($curudrID))
+			  {
+			  $curID=$curudrID[0]->user_id;			
+			  }		
+			$this->form_validation->set_rules('description','Description','required|xss_clean|max_lenght[1000]');	
+			$descrp = $this->input->post('description',TRUE);
+			$textToStore = nl2br(htmlentities($descrp, ENT_QUOTES, 'UTF-8'));
+			if($this->form_validation->run() == TRUE)
+			{
+			$postData = array(
+				'user_id'		=> $curID,
+				'description'	=> $textToStore,
+				'type'			=> '2',	
+				'created'		=> date('Y-m-d H:i:s'),
+					);	
+			$this->db->insert('tbl_travel_plans',$postData,FALSE);
+			redirect('home/timelinepost/'.$curID,'');
+			}				
+			  
+			  $condition                = array();
+			  $pagesize                 = (int) $this->input->get_post('pagesize');
+			  $config['limit']          = ( $pagesize > 0 ) ? $pagesize : $this->config->item('per_page');
+			  $offset                   =  ( $this->input->get_post('per_page') > 0 ) ? $this->input->get_post('per_page') : 0;        
+			  $base_url                 =  current_url_query_string(array('filter'=>'result'),array('per_page'));			  
+			  $uid 						= $this->uri->segment(3);
+			  $config['total_rows']		   = $this->home_model->countPlans($uid);
+			  $udrID                     =$this->home_model->getUserInfo($uid);			
+				if($uid!='')
+				{
+				$condition['user_id']        =$uid;				
+				}				
+				$res                             = $this->home_model->get_postTime($config['limit'],$offset,$condition);
+				$data['page_links']            = pagination_refresh($base_url,$config['total_rows'],$config['limit'],$offset);	
+				//print_r($data['page_links']); die;
+				$data['res']					   = $res;			
+			  $data["user"]                 	= $udrID;		  
+			  $this->load->view('home/timeline_view',$data);
+			}
+			else
+			{
+				redirect(site_url('user/login'));
+			}
+		}
+		/* Fetch City Value From Dtabase  */
+		 
+		public function getState(){
+			$this->load->model(array('home/home_model'));
+			$id = $this->input->get_post('country_id');
+			$data1 = $this->home_model->getStateModel($id);
+			if(!empty($data1)){
+				$str='';
+				$str.= '<option value="0">Select City</option>';
+				foreach($data1 as $dat){
+					$str.= '<option value="'.$dat->city.'" >'.$dat->city.'</option>';
+				}
+				echo $str;
+			}
+		}		
+	
+	public function SearchHome() {	
+        $term = $this->input->get('term');       
+        $query = $this->home_model->getCityCountry($term);
+        $result= $query->result();
+		$return = array();		
+		foreach ($result as $row):
+        $val=$row->city.'-'.$row->country_name;
+			array_push($return, array("id"=>$row->id, "label"=>$val, "value" =>$row->id));
+        endforeach;
+		echo json_encode($return);
+    }
+	
+	
+		public function searchcountry()
+		{
+		$term 	= $this->input->get('term');
+		$query 	= $this->home_model->getCountry($term);		
+		$result	= $query->result();
+		$return = array();
+		foreach ($result as $row):        
+		array_push($return, array("id"=>$row->country_name, "label"=>$row->country_name, "value" =>$row->country_id));
+        endforeach;
+		echo json_encode($return);
+		}
+		
+		public function searchcity()
+		{
+		$term 	= $this->input->get('term');
+		$query 	= $this->home_model->getCity($term);		
+		$result	= $query->result();
+		$return = array();
+		foreach ($result as $row):
+        $val=$row->city;
+		array_push($return, array("id"=>$row->city, "label"=>$row->city, "value" =>$row->id));
+        endforeach;
+		echo json_encode($return);
+		}
+		
+		public function googleLoginSubmit() {
+
+		// Include two files from google-php-client library in controller
+		include_once APPPATH . "libraries/google-api-php-client-master/src/Google/Client.php";
+		include_once APPPATH . "libraries/google-api-php-client-master/src/Google/Service/Oauth2.php";
+
+		// Store values in variables from project created in Google Developer Console
+		//$client_id = '981773355393-jnghl2smh3lkabuh71lj6rev0n9btc6c.apps.googleusercontent.com';
+		//$client_secret = '00g-T9A5460Bv35_5paIqPWP';
+		//$redirect_uri = 'http://smanikdemo.in/gobarra/home/googleLoginSubmit';
+		//$simple_api_key = 'AIzaSyAcazH5rlbnCJhqpjyCZzwOPOoKfuXotrU';
+                
+                $client_id = '228466704994-hjrca9r3ntufko2qcbk34dh9mtnvcbt8.apps.googleusercontent.com';
+		$client_secret = '5K-0hJdU0klVq--EjgL_AJor';
+		$redirect_uri = 'http://gobarra.com/home/googleLoginSubmit';
+		$simple_api_key = 'AIzaSyAH_ECmJbr3uf0uzvj19kibjpJoTCSsuLI';
+
+		// Create Client Request to access Google API
+		$client = new Google_Client();
+		$client->setApplicationName("PHP Google OAuth Login Example");
+		$client->setClientId($client_id);
+		$client->setClientSecret($client_secret);
+		$client->setRedirectUri($redirect_uri);
+		$client->setDeveloperKey($simple_api_key);
+		$client->addScope("https://www.googleapis.com/auth/userinfo.email");
+
+		// Send Client Request
+		$objOAuthService = new Google_Service_Oauth2($client);
+		$code=$this->input->get('code');
+		// Add Access Token to Session
+		//die($code);
+		if (isset($code)&& $code!='') {
+		//die($code);
+		$client->authenticate($code);
+		$token = $client->getAccessToken();
+		$this->session->set_userdata('token_no', $token);
+		//print_r($token); die;
+		header('Location: ' . filter_var($redirect_uri, FILTER_SANITIZE_URL));
+		}
+
+		// Set Access Token to make Request
+		$chk=$this->session->userdata('token_no');
+		if ($chk!='' ) {
+		$client->setAccessToken($this->session->userdata('token_no'));
+		}
+
+		// Get User Data from Google and store them in $data
+		if ($client->getAccessToken()) {
+		$userData = $objOAuthService->userinfo->get();
+		$data['userData'] = $userData;
+
+		$tok = $client->getAccessToken();
+		$this->session->set_userdata('token_no', $tok);
+		if($userData!='' && !empty($userData))
+		{
+		$this->load->model('user/users_model','users');
+		if(!$this -> users ->validate_email($userData->email)){
+		$fname=$userData->givenName;
+		$lnaem=$userData->familyName;
+		$email=$userData->email;
+		$male='';
+		if($userData->gender=='male')
+		{
+		$male='m';
+		}
+		else
+		{
+		$male='f';
+		}
+
+		$user_details = array(
+					'first_name'  => $fname,
+					'last_name'  => $lnaem,
+					'email' => $email, 
+					'gender' => $male, 
+					'status' => '1',
+					'added_date' => date('Y-m-d H:i:s'),                 
+					'modified' => date('Y-m-d H:i:s') ,
+					'password' => $email,          
+					);
+					$user_id = $this->db->insert('tbl_users', $user_details);   
+					$users = $this -> users -> getuserInfo($email);
+					$data = array(
+					'email' => $user['email'],
+					'is_logged_in' =>TRUE
+				);
+				$this->session->set_userdata($data);
+				//print_r($data); die;
+				redirect(site_url('home'));
+		}
+		else
+		{
+		$data = array(
+					'email' => $userData->email,
+					'is_logged_in' =>TRUE
+				);
+				//print_r($data); die;
+				$this->session->set_userdata($data); 
+				redirect(site_url('home'));
+		}
+		}
+		else
+		{
+		 redirect('home/googleLoginSubmit', 'refresh');
+		}
+		} else {
+		$authUrl = $client->createAuthUrl();
+		$data['authUrl'] = $authUrl;
+		}
+		// Load view and send values stored in $data
+		$this->load->view('google_authentication', $data);
+		}
+		}
